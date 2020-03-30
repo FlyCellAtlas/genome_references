@@ -1,0 +1,111 @@
+From 4bb844eb600292169a026f878df0ce753a87895e Mon Sep 17 00:00:00 2001
+From: Ian Fiddes <ian.fiddes@10xgenomics.com>
+Date: Wed, 29 May 2019 15:12:12 -0700
+Subject: [PATCH] Nuclei references.
+
+Modify `mkref` to automatically generate a nuclei reference by copying each `transcript` feature to a new line as a exon with a new `transcript_id` with a suffix.
+---
+ bin/mkref                          |  8 +++++---
+ lib/python/cellranger/constants.py |  2 ++
+ lib/python/cellranger/reference.py | 25 +++++++++++++++++++++++--
+ 3 files changed, 30 insertions(+), 5 deletions(-)
+
+diff --git a/bin/mkref b/bin/mkref
+index c377ec0f6..e1233ffec 100755
+--- a/bin/mkref
++++ b/bin/mkref
+@@ -38,6 +38,7 @@ Arguments:
+                 the --genes argument multiple times.
+ Options:
++    --nuclei            Construct this as a pre-mRNA (nuclei) reference?
+     --nthreads=<num>    Number of threads used during STAR genome index
+                           generation. Defaults to 1.
+     --memgb=<num>       Maximum memory (GB) used when aligning reads with STAR.
+@@ -90,9 +91,10 @@ def main():
+     if not os.access(output_parent_dir, os.W_OK):
+         sys.exit("You do not have write permission in %s." % output_parent_dir)
+-    referenceBuilder = cr_reference.ReferenceBuilder(genomes, input_fasta_files, input_genes_files, output_dir,
+-                                                     ref_version,
+-                                                     mkref_version,
++    referenceBuilder = cr_reference.ReferenceBuilder(genomes, input_fasta_files,
++                                                     input_genes_files, output_dir,
++                                                     args["--nuclei"],
++                                                     ref_version, mkref_version,
+                                                      num_threads=num_threads, mem_gb=mem_gb)
+     referenceBuilder.build_reference()
+diff --git a/lib/python/cellranger/constants.py b/lib/python/cellranger/constants.py
+index 6588ee77b..e8ec0d4d8 100644
+--- a/lib/python/cellranger/constants.py
++++ b/lib/python/cellranger/constants.py
+@@ -220,6 +220,8 @@ FORWARD_STRAND = '+'
+ REVERSE_STRAND = '-'
+ STRANDS = [FORWARD_STRAND, REVERSE_STRAND]
++PREMRNA_SUFFIX = 'premrna'
++
+ THREE_PRIME = 'three_prime'
+ FIVE_PRIME = 'five_prime'
+diff --git a/lib/python/cellranger/reference.py b/lib/python/cellranger/reference.py
+index 3628319c5..5562f66ab 100644
+--- a/lib/python/cellranger/reference.py
++++ b/lib/python/cellranger/reference.py
+@@ -171,7 +171,8 @@ class GtfBuilder(GtfParser):
+         print "...done\n"
+ class ReferenceBuilder(GtfParser):
+-    def __init__(self, genomes, in_fasta_fns, in_gtf_fns, out_dir, ref_version, mkref_version, num_threads=1, mem_gb=None):
++    def __init__(self, genomes, in_fasta_fns, in_gtf_fns, out_dir, nuclei,
++                 ref_version, mkref_version, num_threads=1, mem_gb=None):
+         self.genomes = genomes
+         self.in_fasta_fns = in_fasta_fns
+         self.in_gtf_fns = in_gtf_fns
+@@ -180,6 +181,7 @@ class ReferenceBuilder(GtfParser):
+         self.mem_gb = mem_gb
+         self.ref_version = ref_version
+         self.mkref_version = mkref_version
++        self.nuclei = nuclei
+         self.format_genome_prefixes()
+@@ -202,7 +204,10 @@ class ReferenceBuilder(GtfParser):
+         subprocess.check_call(["samtools", "faidx", new_genome_fasta])
+         print "...done\n"
+-        print "Writing genes GTF file into reference folder..."
++        if self.nuclei:
++            print "Writing genes GTF file into reference folder with nuclei entries added..."
++        else:
++            print "Writing genes GTF file into reference folder..."
+         new_gene_gtf = os.path.join(self.out_dir, cr_constants.REFERENCE_GENES_GTF_PATH)
+         os.mkdir(os.path.dirname(new_gene_gtf))
+         self.write_genome_gtf(new_gene_gtf)
+@@ -284,6 +289,7 @@ class ReferenceBuilder(GtfParser):
+                 transcript_to_chrom = {}
+                 cross_chrom_transcripts = set()
++                bad_premrna_rows = []
+                 for row, is_comment, properties in self.gtf_reader_iter(in_gtf_fn):
+                     if is_comment:
+                         writer.writerow(row)
+@@ -309,11 +315,26 @@ class ReferenceBuilder(GtfParser):
+                     writer.writerow(row)
++                    if self.nuclei and row[2] == 'transcript':
++                        premrna_row = row[:]
++                        premrna_properties = properties.copy()
++                        premrna_row[2] = 'exon'
++                        if 'transcript_id' in properties:
++                            premrna_properties['transcript_id'] = premrna_properties['transcript_id'] + '_{}'.format(cr_constants.PREMRNA_SUFFIX)
++                        else:
++                            bad_premrna_rows.append(row)
++                            continue
++                        premrna_row[8] = self.format_properties_dict(premrna_properties)
++                        writer.writerow(premrna_row)
++
+                 if len(cross_chrom_transcripts) > 0:
+                     print "WARNING: The following transcripts appear on multiple chromosomes in the GTF:"
+                     print '\n'.join(list(cross_chrom_transcripts)) + '\n'
+                     print "This can indicate a problem with the reference or annotations. Only the first chromosome will be counted."
++                if len(bad_premrna_rows) > 0:
++                    print "WARNING: {} transcript entries were not capable of being converted to pre-mRNA entries".format(len(bad_premrna_rows))
++
+     def write_genome_gene_index(self, out_pickle_fn, in_gtf_fn, in_fasta_fn):
+         gene_index = GeneIndex(in_gtf_fn, in_fasta_fn)
+         gene_index.save_pickle(out_pickle_fn)
+
+base-commit: 172f0dce808587fd4db58e9be5682e1b4cb2eb97
+-- 
+2.14.5
