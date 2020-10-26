@@ -7,8 +7,8 @@ Here is a quick on how the `dmel-all-r6.31-premrna.gtf` was build. If you find a
 1. Download annotation and genome from FlyBase
 
 ```
-wget ftp://ftp.flybase.net/releases/current/dmel_r6.31/fasta/dmel-all-chromosome-r6.31.fasta.gz
-wget ftp://ftp.flybase.net/releases/current/dmel_r6.31/gff/dmel-all-r6.31.gff.gz
+wget ftp://ftp.flybase.net/releases/FB2019_06/dmel_r6.31/fasta/dmel-all-chromosome-r6.31.fasta.gz
+wget ftp://ftp.flybase.net/releases/FB2019_06/dmel_r6.31/gff/dmel-all-r6.31.gff.gz
 ```
 
 2. Use GFFtools-GX to convert GFF to GTF
